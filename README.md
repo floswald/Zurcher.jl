@@ -12,7 +12,7 @@ GitHub Actions : [![Build Status](https://github.com/floswald/Zurcher.jl/workflo
 
 ### What is the point of this package?
 
-* The main point is to demonstrate the relative easiness with which we can tackle an MPEC problem with the [`JuMP.jl`](https://jump.dev) package.
+* The main point is to demonstrate the relative easiness with which we can tackle an MPEC problem with the [`JuMP.jl`](https://jump.dev) package. Please look at [docs](https://floswald.github.io/Zurcher.jl/dev) for some sparse explanation and (above all) a link to the relevant source code.
 * JuMP is like AMPL, but for free and embedded in a proper programming language. 
 * For a similar demonstration of this please visit [https://github.com/UBCECON567/BLPDemand.jl](https://github.com/UBCECON567/BLPDemand.jl), which is very cool.
 
