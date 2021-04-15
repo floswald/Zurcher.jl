@@ -81,12 +81,13 @@ Of course the remaining option is that there is a mistake.
 
 ### Accuracy
 
-You can run a set of results with the function `runall` which will return a dict with results and timings for different values of β and `n`. In general, the partial MLE results are ok for both methods, but MPEC never converges to the correct solution with very high values for β. Full MLE converges to a different optimum in MPEC because of the way I try to implement the _last bin issue_ mentioned above. This can very likely be improved.
+You can run a set of results with the function `runall` which will return a dict with results and timings for different values of β and `n`. In general, the partial MLE results are ok for both methods, but MPEC never converges to the correct solution with very high values for β. I think this is because of numerical instability in the log-sum function, which could be solved if I were able to do point 2. above. Full MLE converges to a different optimum in MPEC because of the way I try to implement the _last bin issue_ mentioned above. This can very likely be improved.
 
 ### Timing
 
 * The MPEC solution is always orders of magnitude faster than the NFXP.
 * As mentioned above, this is not a general statement, because in this class of model the NFXP can be massively sped up by implementing Rust's polyalgorithm. 
+* *Absent* the possibility of implementing a Rust-like polyalgorithm and deriving analytical gradients for the likelihood, automatic differentiation via JuMP.jl is a promising method. 
 
 ```julia
 julia> d = Zurcher.runall()
