@@ -65,7 +65,7 @@ mutable struct Harold
     transition::Matrix{Float64}
 
     function Harold(;n = 175,maxmiles = 450, RC = 11.7257,c = 2.45569,
-                      θ = [0.0937, 0.4475 ,0.4459, 0.0127],
+                      θ = [0.107, 0.5152 ,0.3622, 0.0143,0.0009],
                       β = 0.999, tol =  1e-12)
 
         this = new()   # create new empty Harold instance
@@ -303,6 +303,29 @@ function loglikelihood(z,p_model,
 end
 
 """
+    nested_likelihood(x::Vector{Float64}, h::Harold, d::DataFrame)
+
+Outer loop of NFXP proceedure. takes candidate vector `x` of parameters, solves model, and evaluates the log likelihood.
+"""
+function nested_likelihood(x::Vector{Float64}, h::Harold, d::DataFrame)
+    # update Harold
+    h.RC = x[1]
+    h.c  = x[2]
+    if length(x) > 2
+        h.θ  = x[3:end]
+        h.transition = make_trans(h.θ,h.n)
+    end
+
+    # compute structural model 
+    sol, iters = vfi(h)
+    pr  = ccp(h, sol)
+
+    # evaluate likelihood function 
+    loglikelihood(h, pr, d.d, d.x, d.dx1, do_θ = length(x) > 2)
+end
+
+
+"""
     busdata(z::Harold; bustype = 4)
 
 Data Loader.
@@ -338,12 +361,12 @@ function partialMLE(dx1::Vector)
 end
 
 """
-    nfxp(; β = 0.9, is_silent = false, doθ = false)
+    nfxp(; β = 0.9, is_silent = false, doθ = false,n = 175, θ = [0.107, 0.5152 ,0.3622, 0.0143,0.0009])
 
 Nested Fixed Point estimation. Can choose to do partial MLE (don't estimate the θs for mileage transition).
 """
-function nfxp(; β = 0.9, is_silent = false, doθ = false)
-    z = Harold(RC = 0.0, c = 0.0, β = β)
+function nfxp(; β = 0.9, is_silent = false, doθ = false,n = 175, θ = [0.107, 0.5152 ,0.3622, 0.0143,0.0009])
+    z = Harold(RC = 0.0, c = 0.0, β = β, n = n, θ = θ)
 
     # get data
     d = busdata(z)
@@ -367,36 +390,15 @@ function nfxp(; β = 0.9, is_silent = false, doθ = false)
 
 end
 
-"""
-    nested_likelihood(x::Vector{Float64}, h::Harold, d::DataFrame)
-
-Outer loop of NFXP proceedure. takes candidate vector `x` of parameters, solves model, and evaluates the log likelihood.
-"""
-function nested_likelihood(x::Vector{Float64}, h::Harold, d::DataFrame)
-    # update Harold
-    h.RC = x[1]
-    h.c  = x[2]
-    if length(x) > 2
-        h.θ  = x[3:end]
-        h.transition = make_trans(h.θ,h.n)
-    end
-
-    # compute structural model 
-    sol, iters = vfi(h)
-    pr  = ccp(h, sol)
-
-    # evaluate likelihood function 
-    loglikelihood(h, pr, d.d, d.x, d.dx1, do_θ = length(x) > 2)
-end
 
 """
-    mpec(; β = 0.9, is_silent = false, doθ = false)
+    mpec(; β = 0.9, is_silent = false, doθ = false,n = 175, θ = [0.107, 0.5152 ,0.3622, 0.0143,0.0009])
 
 MPEC estimation. Can choose to do partial MLE (don't estimate the θs for mileage transition).
 """
-function mpec(; β = 0.9, is_silent = false, doθ = false)
+function mpec(; β = 0.9, is_silent = false, doθ = false,n = 175, θ = [0.107, 0.5152 ,0.3622, 0.0143,0.0009])
 
-    h = Harold(β = β)
+    h = Harold(β = β, n = n, θ = θ)
     N = h.n # number of mileage states
 
     d = busdata(h)
@@ -417,10 +419,16 @@ function mpec(; β = 0.9, is_silent = false, doθ = false)
     @variable(m, θc >= 0 , start = 0.0)
     @variable(m, RC >= 0 , start = 0.0)
     if doθ
+        p_0 = partialMLE(d.dx1)  # get a starting value for mileage
+        J = length(p_0) + 1 # the partialMLE function discards the smallest bin, but later on sums up all probs 
         @variable(m, θlast[1:(J)] >= 0)
         set_start_value.(θlast[1:(J-1)], p_0)
+        set_start_value(θlast[J], 0.0)
+        @constraint(m, sum(θlast) == 1)
+
     else
-        θlast = [p_0; 1 - sum(p_0)]
+        J = length(h.θ) + 1
+        θlast = [h.θ; 1 - sum(h.θ)]
     end
     @variable(m, -50.0 <= EV[1:N] <= 50.0)  # need to help solver here!
 
@@ -439,8 +447,6 @@ function mpec(; β = 0.9, is_silent = false, doθ = false)
              + log(θlast[gd[i][it,:dx1] + 1]) 
         for i in 1:I, it in 1:icounter[i,:nrow] )  )
 
-        # impose constraint ∑ θp = 1
-        @constraint(m, sum(θlast) == 1)
     else
         @NLobjective(m, Max, 
         sum( log( (gd[i][it,:d]==false) * pkeep[ gd[i][it,:x] ] + (gd[i][it,:d]==true) * (1 - pkeep[ gd[i][it,:x] ]) )
@@ -478,13 +484,23 @@ end
 
 function runall()
     d = Dict()
-    for βs in [0.99, 0.995]
-        d["β=$βs"] = Dict()
-        d["β=$βs"][:mpec] = mpec(β = βs, doθ = false, is_silent = true)
-        d["β=$βs"][:nfxp] = nfxp(β = βs, doθ = false, is_silent = true)
-        d["β=$βs"][:mpec_full] = mpec(β = βs, doθ = true, is_silent = true)
-        d["β=$βs"][:nfxp_full] = nfxp(β = βs, doθ = true, is_silent = true)
+    for ns in [(90, [0.3489, 0.6394]), (175, [0.107, 0.5152 ,0.3622, 0.0143,0.0009])]
+        d["n=$(ns[1])"] = Dict()
+        for βs in [0.99, 0.995, 0.999]
+            @info "running for n=$(ns[1]), β=$βs"
+            d["n=$(ns[1])"]["β=$βs"] = Dict()
+            t1 = @elapsed r1 = mpec(β = βs, doθ = false, is_silent = true,n = ns[1], θ = ns[2])
+            t2 = @elapsed r2 = nfxp(β = βs, doθ = false, is_silent = true,n = ns[1], θ = ns[2])
+            t3 = @elapsed r3 = mpec(β = βs, doθ = true, is_silent = true,n = ns[1])
+            t4 = @elapsed r4 = nfxp(β = βs, doθ = true, is_silent = true,n = ns[1])
+
+            d["n=$(ns[1])"]["β=$βs"][:mpec]      = Dict(:time => t1, :res => r1)
+            d["n=$(ns[1])"]["β=$βs"][:nfxp]      = Dict(:time => t2, :res => r2)
+            d["n=$(ns[1])"]["β=$βs"][:mpec_full] = Dict(:time => t3, :res => r3)
+            d["n=$(ns[1])"]["β=$βs"][:nfxp_full] = Dict(:time => t4, :res => r4)
+        end
     end
+    
     d
 end
 

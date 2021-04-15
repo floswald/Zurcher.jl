@@ -12,7 +12,6 @@
 * For a similar, even more impressive demonstration of this please visit [https://github.com/UBCECON567/BLPDemand.jl](https://github.com/UBCECON567/BLPDemand.jl)
 
 
-
 ```@autodocs
 Modules = [Zurcher]
 ```
